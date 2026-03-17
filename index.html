@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta name="theme-color" content="#F6F4F0" />
+    <title>次、どこ行く？ - IZAKAYA FINDER</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🍶</text></svg>" />
+  </head>
+  <body>
+    <div id="root"></div>
+
+    <!--
+      Google Maps JavaScript API
+      ビルド時に %VITE_GOOGLE_MAPS_API_KEY% は置換されないので、
+      下記の方法のいずれかでAPIキーを設定してください:
+
+      方法1: 直接書き換え（開発時のみ）
+      方法2: vite-plugin-html 等で環境変数から注入
+      方法3: App.tsx 側で動的にスクリプトを読み込む（後述のREADME参照）
+    -->
+    <script
+      src="https://maps.googleapis.com/maps/api/js?key=YOUR_GOOGLE_MAPS_API_KEY&libraries=places&language=ja"
+      async
+      defer
+    ></script>
+
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
