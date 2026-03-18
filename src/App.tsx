@@ -209,7 +209,19 @@ export default function App() {
       const conditions: SearchConditions = { smoking, budgets, groupSize, location };
       const result = await rankWithAI(filtered, conditions);
 
-      setAiResult(result);
+      // 表示順: 1.空席バッジあり → 2.評価高い → 3.距離近い
+      const sortedRankings = [...result.rankings].sort((a, b) => {
+        const pa = result.places.find((p) => p.name === a.name);
+        const pb = result.places.find((p) => p.name === b.name);
+        if (!pa || !pb) return 0;
+        const va = pa.hp_vacancy === true ? 0 : 1;
+        const vb = pb.hp_vacancy === true ? 0 : 1;
+        if (va !== vb) return va - vb;
+        if (Math.abs(pa.rating - pb.rating) > 0.01) return pb.rating - pa.rating;
+        return pa.walk_minutes - pb.walk_minutes;
+      }).map((r, i) => ({ ...r, rank: i + 1 }));
+
+      setAiResult({ ...result, rankings: sortedRankings });
       setScreen("results");
     } catch (err: any) {
       console.error("Search error:", err);
