@@ -5,7 +5,7 @@ export interface Izakaya {
   reviews: number;
   price_level: number | null; // 0-4 from Google
   price_label: "安い" | "普通" | "高い";
-  smoking: "unknown"; // Google APIでは取得不可。将来的にホットペッパー等で補完
+  smoking: "smoking" | "no_smoking" | "partial" | "unknown";
   distance_meters: number;
   walk_minutes: number;
   is_open: boolean;
@@ -15,6 +15,13 @@ export interface Izakaya {
   lat: number;
   lng: number;
   google_maps_url: string;
+  // HotPepper fields (undefined = not linked to HP)
+  hp_id?: string;
+  hp_url?: string;
+  hp_vacancy?: boolean; // true = has vacancy
+  hp_has_free_drink?: boolean;
+  hp_has_private_room?: boolean;
+  hp_capacity?: number;
 }
 
 export interface AiRanking {

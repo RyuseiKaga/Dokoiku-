@@ -69,6 +69,19 @@ function Tag({ children, color, bg }: { children: React.ReactNode; color?: strin
   );
 }
 
+function VacancyBadge() {
+  return (
+    <div style={{
+      display: "inline-flex", alignItems: "center", gap: 5,
+      fontSize: 11, fontWeight: 700,
+      color: "#5A9E6A", background: "#EBF5EC",
+      padding: "3px 9px", borderRadius: 6,
+    }}>
+      <span style={{ fontSize: 10 }}>◉</span> 空席あり
+    </div>
+  );
+}
+
 function OpenBadge({ closeTime }: { closeTime: string | null }) {
   if (!closeTime) {
     return (
@@ -192,7 +205,7 @@ export default function App() {
       });
 
       // Step 5: AI でランキング
-      setLoadingStep(3);
+      setLoadingStep(4);
       const conditions: SearchConditions = { smoking, budgets, groupSize, location };
       const result = await rankWithAI(filtered, conditions);
 
@@ -347,6 +360,7 @@ export default function App() {
       "近くの居酒屋を検索しています",
       "評価 3.8 以上に絞り込んでいます",
       "営業時間を確認しています",
+      "ホットペッパーで空席を確認しています",
       "AIがおすすめを選んでいます",
     ];
     return (
@@ -443,8 +457,9 @@ export default function App() {
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 16, fontWeight: 800, color: t.text, marginBottom: 6 }}>{place.name}</div>
 
-                  <div style={{ marginBottom: 8 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
                     <OpenBadge closeTime={place.close_time} />
+                    {place.hp_vacancy && <VacancyBadge />}
                   </div>
 
                   <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8, flexWrap: "wrap" }}>
@@ -458,6 +473,12 @@ export default function App() {
                       bg={place.price_label === "安い" ? t.greenBg : place.price_label === "高い" ? "#F3EFF8" : t.amberBg}
                     >{place.price_label}</Tag>
                     <Tag>徒歩{place.walk_minutes}分</Tag>
+                    {place.smoking === "no_smoking" && <Tag color="#6A9E9E" bg="#EBF3F5">禁煙</Tag>}
+                    {place.smoking === "smoking" && <Tag color="#9E7A5A" bg="#F5EDE6">喫煙OK</Tag>}
+                    {place.smoking === "partial" && <Tag color="#9E9E5A" bg="#F5F2E6">喫煙席あり</Tag>}
+                    {place.hp_has_free_drink && <Tag color={t.accent} bg={t.accentLight}>飲み放題</Tag>}
+                    {place.hp_has_private_room && <Tag>個室あり</Tag>}
+                    {place.hp_capacity && <Tag>{place.hp_capacity}席</Tag>}
                   </div>
                 </div>
               </div>
@@ -480,14 +501,25 @@ export default function App() {
                 <span style={{ fontSize: 12, color: t.textSub, lineHeight: 1.7 }}>{rec.reason}</span>
               </div>
 
-              {/* Google Maps link */}
-              <a href={place.google_maps_url} target="_blank" rel="noopener noreferrer" style={{ textDecoration: "none" }}>
-                <button style={{
-                  marginTop: 12, width: "100%", padding: 10, borderRadius: 8, cursor: "pointer",
-                  background: t.bg, border: `1px solid ${t.cardBorder}`,
-                  color: t.textSub, fontSize: 12, fontWeight: 600, textAlign: "center", fontFamily: "inherit",
-                }}>Google Map で開く →</button>
-              </a>
+              {/* Link buttons */}
+              <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+                <a href={place.google_maps_url} target="_blank" rel="noopener noreferrer" style={{ textDecoration: "none", flex: 1 }}>
+                  <button style={{
+                    width: "100%", padding: 10, borderRadius: 8, cursor: "pointer",
+                    background: t.bg, border: `1px solid ${t.cardBorder}`,
+                    color: t.textSub, fontSize: 12, fontWeight: 600, textAlign: "center", fontFamily: "inherit",
+                  }}>Google Map →</button>
+                </a>
+                {place.hp_url && (
+                  <a href={place.hp_url} target="_blank" rel="noopener noreferrer" style={{ textDecoration: "none", flex: 1 }}>
+                    <button style={{
+                      width: "100%", padding: 10, borderRadius: 8, cursor: "pointer",
+                      background: t.accentLight, border: `1px solid ${t.accentSoft}`,
+                      color: t.accent, fontSize: 12, fontWeight: 700, textAlign: "center", fontFamily: "inherit",
+                    }}>ホットペッパー →</button>
+                  </a>
+                )}
+              </div>
             </div>
           );
         })}
