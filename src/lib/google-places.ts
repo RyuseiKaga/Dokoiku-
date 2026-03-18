@@ -101,7 +101,7 @@ function nearbySearch(
       radius: MAX_RADIUS_METERS,
       type: "restaurant",
       keyword: "居酒屋 酒場 焼鳥",
-      openNow: true,
+      // openNow: true, // テスト用: 一時的にコメントアウト
       language: "ja",
     };
 
