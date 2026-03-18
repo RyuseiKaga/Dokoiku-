@@ -31,11 +31,21 @@ export async function rankWithAI(
   const placesInfo = places
     .map((p) => {
       const remaining = p.close_time ? timeUntilClose(p.close_time) : "不明";
-      return `${p.name} - 徒歩${p.walk_minutes}分, 評価${p.rating}(${p.reviews}件), ${p.price_label}, 閉店まで${remaining || "不明"}, ${p.address}`;
+      const smokingLabel =
+        p.smoking === "no_smoking" ? "全席禁煙" :
+        p.smoking === "smoking" ? "全席喫煙" :
+        p.smoking === "partial" ? "喫煙席あり" : "喫煙不明";
+      const extras: string[] = [];
+      if (p.hp_has_free_drink) extras.push("飲み放題あり");
+      if (p.hp_has_private_room) extras.push("個室あり");
+      if (p.hp_capacity) extras.push(`席数${p.hp_capacity}席`);
+      if (p.hp_vacancy !== undefined) extras.push("HP空席確認済");
+      const extraStr = extras.length > 0 ? `, ${extras.join(", ")}` : "";
+      return `${p.name} - 徒歩${p.walk_minutes}分, 評価${p.rating}(${p.reviews}件), ${p.price_label}, ${smokingLabel}, 閉店まで${remaining || "不明"}${extraStr}`;
     })
     .join("\n");
 
-  const prompt = `あなたは飲み会の二次会・三次会探しのプロです。以下の条件で、候補の居酒屋からベストな順にランキングしてください。全ての候補店を順位付けしてください。閉店時間が近い店は順位を下げてください。
+  const prompt = `あなたは飲み会の二次会・三次会探しのプロです。以下の条件で、候補の居酒屋からベストな順にランキングしてください。全ての候補店を順位付けしてください。閉店時間が近い店は順位を下げてください。喫煙条件が指定されている場合は喫煙情報を重視してください（HP情報がある場合は正確です）。
 
 【条件】
 - 人数: ${sizeLabel}
