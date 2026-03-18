@@ -263,7 +263,7 @@ export async function searchIzakayas(
       hp_id: hpShop.id,
       hp_url: hpShop.urls.pc,
       // vacancy が undefined（フィールドなし）でも HP 連携として表示
-      hp_vacancy: vacancy ?? true,
+      hp_vacancy: vacancy, // undefined=情報なし(バッジ非表示), true=空席あり
       hp_has_free_drink: hpShop.free_drink === "あり",
       hp_has_private_room: hpShop.private_room === "あり",
       hp_capacity: hpShop.capacity,
