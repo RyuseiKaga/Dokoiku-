@@ -138,6 +138,17 @@ export function matchHpShop(
     }
   }
 
+  // CJK（漢字・ひらがな）部分だけ抽出して部分一致
+  // 例: "炭焼BOOZE" → "炭焼"、"焼き鳥 炭焼きブーズ" → "焼き鳥炭焼き"
+  const cjkOnly = (s: string) => s.replace(/[^\u3040-\u9FFF]/g, "");
+  const googleCjk = cjkOnly(normalized);
+  if (googleCjk.length >= 2) {
+    for (const shop of hpShops) {
+      const hpCjk = cjkOnly(normalizeName(shop.name));
+      if (googleCjk.includes(hpCjk) || hpCjk.includes(googleCjk)) return shop;
+    }
+  }
+
   return null;
 }
 
