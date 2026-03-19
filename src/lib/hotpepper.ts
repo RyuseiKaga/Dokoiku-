@@ -67,7 +67,8 @@ function callJsonp(url: string): Promise<HpResponse> {
  * range=3 → 1000m 圏内
  */
 export async function searchHotpepper(
-  location: { lat: number; lng: number }
+  location: { lat: number; lng: number },
+  options: { vacancyOnly?: boolean } = {}
 ): Promise<HpShop[]> {
   const apiKey = import.meta.env.VITE_HOTPEPPER_API_KEY;
   if (!apiKey) return [];
@@ -80,6 +81,7 @@ export async function searchHotpepper(
     keyword: "居酒屋",
     count: "100",
   });
+  if (options.vacancyOnly) params.set("vacancy", "1");
 
   const url = `https://webservice.recruit.co.jp/hotpepper/gourmet/v1/?${params}`;
 
