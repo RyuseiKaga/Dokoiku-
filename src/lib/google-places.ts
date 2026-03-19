@@ -1,13 +1,13 @@
 import { Izakaya } from "../types";
-import { searchHotpepper, matchHpShop, parseHpVacancy, parseHpSmoking } from "./hotpepper";
+import { searchHotpepper, matchHpShop, parseHpSmoking } from "./hotpepper";
 
 // ============================================================
 // Google Places API (Maps JavaScript API - Places Library)
 // ============================================================
 
 const WALK_SPEED_M_PER_MIN = 80; // 徒歩速度: 約80m/分
-const MAX_WALK_MINUTES = 9999; // テスト用: 一時的に無制限
-const MAX_RADIUS_METERS = 30000; // テスト用: 30km
+const MAX_WALK_MINUTES = 8;
+const MAX_RADIUS_METERS = WALK_SPEED_M_PER_MIN * MAX_WALK_MINUTES; // 640m
 const MIN_RATING = 3.8;
 
 // 居酒屋以外を除外するキーワード（店名に含まれる場合はスキップ）
@@ -101,7 +101,7 @@ function nearbySearch(
       radius: MAX_RADIUS_METERS,
       type: "restaurant",
       keyword: "居酒屋 酒場 焼鳥",
-      // openNow: true, // テスト用: 一時的にコメントアウト
+      openNow: true,
       language: "ja",
     };
 
@@ -240,7 +240,11 @@ export async function searchIzakayas(
 
   // Step 3: HotPepper で空席・喫煙情報を補完
   onProgress?.(3);
-  const hpShops = await searchHotpepper(location);
+  const [hpShops, hpVacancyShops] = await Promise.all([
+    searchHotpepper(location),
+    searchHotpepper(location, { vacancyOnly: true }),
+  ]);
+  const hpVacancyIds = new Set(hpVacancyShops.map((s) => s.id));
 
   const enriched: Izakaya[] = [];
   for (const izakaya of detailed) {
@@ -252,18 +256,13 @@ export async function searchIzakayas(
       continue;
     }
 
-    const vacancy = parseHpVacancy(hpShop);
-
-    // HP連携店で vacancy フィールドが明示的に「満席」なら除外
-    if (vacancy === false) continue;
-
     enriched.push({
       ...izakaya,
       smoking: parseHpSmoking(hpShop),
       hp_id: hpShop.id,
       hp_url: hpShop.urls.pc,
-      // vacancy が undefined（フィールドなし）でも HP 連携として表示
-      hp_vacancy: vacancy, // undefined=情報なし(バッジ非表示), true=空席あり
+      // vacancy=1 検索に含まれた店舗のみ true（バッジ表示）
+      hp_vacancy: hpVacancyIds.has(hpShop.id) ? true : undefined,
       hp_has_free_drink: hpShop.free_drink === "あり",
       hp_has_private_room: hpShop.private_room === "あり",
       hp_capacity: hpShop.capacity,
