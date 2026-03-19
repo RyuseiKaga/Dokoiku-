@@ -6,8 +6,8 @@ import { searchHotpepper, matchHpShop, parseHpSmoking } from "./hotpepper";
 // ============================================================
 
 const WALK_SPEED_M_PER_MIN = 80; // 徒歩速度: 約80m/分
-const MAX_WALK_MINUTES = 9999; // テスト用: 一時的に無制限
-const MAX_RADIUS_METERS = 30000; // テスト用: 30km
+const MAX_WALK_MINUTES = 8;
+const MAX_RADIUS_METERS = WALK_SPEED_M_PER_MIN * MAX_WALK_MINUTES; // 640m
 const MIN_RATING = 3.8;
 
 // 居酒屋以外を除外するキーワード（店名に含まれる場合はスキップ）
@@ -101,7 +101,7 @@ function nearbySearch(
       radius: MAX_RADIUS_METERS,
       type: "restaurant",
       keyword: "居酒屋 酒場 焼鳥",
-      // openNow: true, // テスト用: 一時的にコメントアウト
+      openNow: true,
       language: "ja",
     };
 
