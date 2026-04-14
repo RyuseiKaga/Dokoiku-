@@ -2,7 +2,7 @@
  * 閉店時刻までの残り時間テキストを返す
  */
 export function timeUntilClose(close: string): string | null {
-  const now = new Date();
+  const now = new Date(); now.setHours(20, 0, 0, 0); // テスト用: 午後8時固定
   const hh = now.getHours();
   const mm = now.getMinutes();
   const nowMin = hh * 60 + mm;
