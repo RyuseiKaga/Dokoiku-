@@ -248,7 +248,7 @@ export async function searchIzakayas(
 
   const enriched: Izakaya[] = [];
   for (const izakaya of detailed) {
-    const hpShop = matchHpShop(izakaya.name, hpShops);
+    const hpShop = matchHpShop(izakaya.name, izakaya.lat, izakaya.lng, hpShops);
 
     if (!hpShop) {
       // Google のみ → そのまま表示（空席バッジなし）
