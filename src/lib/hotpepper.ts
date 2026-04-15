@@ -78,7 +78,6 @@ export async function searchHotpepper(
     lat: String(location.lat),
     lng: String(location.lng),
     range: "3", // 1000m
-    keyword: "居酒屋",
     count: "100",
   });
   if (options.vacancyOnly) params.set("vacancy", "1");
