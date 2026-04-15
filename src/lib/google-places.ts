@@ -199,6 +199,7 @@ JSON形式のみで返答してください。例: {"0": 0, "1": null}
 
     const data = await response.json();
     const text = data.content?.map((i: any) => i.text || "").join("") || "";
+    console.log("[AI match] レスポンス:", text);
     const clean = text.replace(/```json|```/g, "").trim();
     const parsed = JSON.parse(clean) as Record<string, number | null>;
 
@@ -312,6 +313,8 @@ export async function searchIzakayas(
     searchHotpepper(location),
     searchHotpepper(location, { vacancyOnly: true }),
   ]);
+  console.log("[HP] 取得店舗数:", hpShops.length, "空席あり:", hpVacancyShops.length);
+  console.log("[HP] 店舗一覧:", hpShops.map((s) => `${s.name} (${s.lat},${s.lng})`));
   const hpVacancyIds = new Set(hpVacancyShops.map((s) => s.id));
 
   const enriched: Izakaya[] = [];
@@ -319,11 +322,12 @@ export async function searchIzakayas(
     const hpShop = matchHpShop(izakaya.name, izakaya.lat, izakaya.lng, hpShops);
 
     if (!hpShop) {
-      // Google のみ → そのまま表示（空席バッジなし）
+      console.log(`[HP] マッチなし: ${izakaya.name}`);
       enriched.push(izakaya);
       continue;
     }
 
+    console.log(`[HP] マッチ: ${izakaya.name} → ${hpShop.name}`);
     enriched.push({
       ...izakaya,
       smoking: parseHpSmoking(hpShop),
@@ -350,6 +354,7 @@ export async function searchIzakayas(
     });
 
     if (nearbyCandidates.length > 0) {
+      console.log(`[AI match] 候補あり: ${iz.name} → HP候補:`, nearbyCandidates.map((h) => h.name));
       unmatchedPairs.push({ izakaya: iz, candidates: nearbyCandidates });
     }
   }
