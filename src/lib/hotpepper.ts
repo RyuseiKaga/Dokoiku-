@@ -95,6 +95,18 @@ export async function searchHotpepper(
 }
 
 /**
+ * 店名を正規化（マッチング精度向上）
+ */
+function normalizeName(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[\s　]+/g, "")
+    .replace(/[（）()【】「」『』〔〕]/g, "")
+    .replace(/[・、。]/g, "")
+    .replace(/(本店|別館|支店|新館|２号店|2号店|店)$/, "");
+}
+
+/**
  * 2点間の直線距離（メートル）
  */
 function distanceMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
