@@ -95,53 +95,83 @@ export async function searchHotpepper(
 }
 
 /**
- * 店名を正規化（マッチング精度向上）
+ * 2点間の直線距離（メートル）
  */
-function normalizeName(name: string): string {
-  return name
-    .toLowerCase()
-    .replace(/[\s　]+/g, "")
-    .replace(/[（）()【】「」『』〔〕]/g, "")
-    .replace(/[・、。・]/g, "")
-    .replace(/(本店|別館|支店|新館|２号店|2号店|店)$/, "");
+function distanceMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371000;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLng = ((lng2 - lng1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
 /**
- * Google Places の店名に対応する HotPepper shop を探す
- * 完全一致 → 部分一致 → 前方一致 の順で検索
+ * CJK文字（漢字・ひらがな・カタカナ）のみ抽出
+ */
+function cjkOnly(s: string): string {
+  return s.replace(/[^\u3040-\u9FFF]/g, "");
+}
+
+/**
+ * Google Places の店舗に対応する HotPepper shop を探す
+ * 優先順: 座標50m以内 → 座標150m以内+CJK名前一致 → 名前のみ
  */
 export function matchHpShop(
   googleName: string,
+  lat: number,
+  lng: number,
   hpShops: HpShop[]
 ): HpShop | null {
   const normalized = normalizeName(googleName);
+  const googleCjk = cjkOnly(normalized);
 
-  // 完全一致
+  // 1. 座標50m以内 → ほぼ確実に同一店舗
   for (const shop of hpShops) {
-    if (normalizeName(shop.name) === normalized) return shop;
+    const hpLat = parseFloat(shop.lat);
+    const hpLng = parseFloat(shop.lng);
+    if (isNaN(hpLat) || isNaN(hpLng)) continue;
+    if (distanceMeters(lat, lng, hpLat, hpLng) <= 50) return shop;
   }
 
-  // 部分一致（どちらかが一方を含む）
-  for (const shop of hpShops) {
-    const hpNorm = normalizeName(shop.name);
-    if (normalized.includes(hpNorm) || hpNorm.includes(normalized)) return shop;
-  }
-
-  // 前方一致（最低4文字以上）
-  if (normalized.length >= 4) {
+  // 2. 座標150m以内 + CJK名前の先頭2文字以上一致
+  if (googleCjk.length >= 2) {
     for (const shop of hpShops) {
-      const hpNorm = normalizeName(shop.name);
-      const checkLen = Math.min(normalized.length, hpNorm.length, 6);
-      if (checkLen >= 4 && normalized.slice(0, checkLen) === hpNorm.slice(0, checkLen)) {
+      const hpLat = parseFloat(shop.lat);
+      const hpLng = parseFloat(shop.lng);
+      if (isNaN(hpLat) || isNaN(hpLng)) continue;
+      if (distanceMeters(lat, lng, hpLat, hpLng) > 150) continue;
+      const hpCjk = cjkOnly(normalizeName(shop.name));
+      if (hpCjk.length >= 2 && (googleCjk.includes(hpCjk.slice(0, 2)) || hpCjk.includes(googleCjk.slice(0, 2)))) {
         return shop;
       }
     }
   }
 
-  // CJK（漢字・ひらがな）部分だけ抽出して部分一致
-  // 例: "炭焼BOOZE" → "炭焼"、"焼き鳥 炭焼きブーズ" → "焼き鳥炭焼き"
-  const cjkOnly = (s: string) => s.replace(/[^\u3040-\u9FFF]/g, "");
-  const googleCjk = cjkOnly(normalized);
+  // 3. 名前のみ: 完全一致
+  for (const shop of hpShops) {
+    if (normalizeName(shop.name) === normalized) return shop;
+  }
+
+  // 4. 名前のみ: 部分一致
+  for (const shop of hpShops) {
+    const hpNorm = normalizeName(shop.name);
+    if (normalized.includes(hpNorm) || hpNorm.includes(normalized)) return shop;
+  }
+
+  // 5. 名前のみ: 前方一致（最低4文字）
+  if (normalized.length >= 4) {
+    for (const shop of hpShops) {
+      const hpNorm = normalizeName(shop.name);
+      const checkLen = Math.min(normalized.length, hpNorm.length, 6);
+      if (checkLen >= 4 && normalized.slice(0, checkLen) === hpNorm.slice(0, checkLen)) return shop;
+    }
+  }
+
+  // 6. 名前のみ: CJK部分一致（ロマ字・カタカナ混在対応）
   if (googleCjk.length >= 2) {
     for (const shop of hpShops) {
       const hpCjk = cjkOnly(normalizeName(shop.name));

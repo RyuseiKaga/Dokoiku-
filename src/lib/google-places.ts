@@ -63,7 +63,7 @@ function getCloseTime(
     const periods = place.opening_hours?.periods;
     if (!periods) return null;
 
-    const now = new Date(); now.setHours(20, 0, 0, 0); // テスト用: 午後8時固定
+    const now = new Date();
     const dayOfWeek = now.getDay();
 
     for (const period of periods) {
@@ -101,7 +101,7 @@ function nearbySearch(
       radius: MAX_RADIUS_METERS,
       type: "restaurant",
       keyword: "居酒屋 酒場 焼鳥",
-      // openNow: true, // テスト用: 一時的にコメントアウト
+      openNow: true,
       language: "ja",
     };
 
@@ -248,7 +248,7 @@ export async function searchIzakayas(
 
   const enriched: Izakaya[] = [];
   for (const izakaya of detailed) {
-    const hpShop = matchHpShop(izakaya.name, hpShops);
+    const hpShop = matchHpShop(izakaya.name, izakaya.lat, izakaya.lng, hpShops);
 
     if (!hpShop) {
       // Google のみ → そのまま表示（空席バッジなし）
