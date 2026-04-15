@@ -1,5 +1,7 @@
 import { Izakaya } from "../types";
-import { searchHotpepper, matchHpShop, parseHpSmoking } from "./hotpepper";
+import { HpShop, searchHotpepper, matchHpShop, parseHpSmoking } from "./hotpepper";
+
+const ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages";
 
 // ============================================================
 // Google Places API (Maps JavaScript API - Places Library)
@@ -150,6 +152,72 @@ function getPlaceDetails(
 }
 
 /**
+ * 座標・名前でマッチしなかった店舗を Claude Haiku で照合する
+ * 各ペアについて「同一店舗か否か」を返す
+ */
+async function aiMatchHpShops(
+  pairs: Array<{ izakaya: Izakaya; candidates: HpShop[] }>
+): Promise<Map<string, HpShop>> {
+  const result = new Map<string, HpShop>();
+  if (pairs.length === 0) return result;
+
+  const lines = pairs
+    .map((pair, i) => {
+      const hpLines = pair.candidates
+        .map((hp, j) => `  [${j}] ${hp.name}（${hp.address}）`)
+        .join("\n");
+      return `[${i}] Google: ${pair.izakaya.name}（${pair.izakaya.address}）\nHP候補:\n${hpLines}`;
+    })
+    .join("\n\n");
+
+  const prompt = `以下のGoogle店舗とHotPepper店舗が同一店舗かどうか判断してください。
+同一と判断した場合は対応するHP候補のインデックス（0始まりの数値）、なければnullを返してください。
+店名の表記揺れ（例: 英語・カタカナ・略称の違い）を考慮してください。
+
+${lines}
+
+JSON形式のみで返答してください。例: {"0": 0, "1": null}
+キー=Googleペアのインデックス、値=同一と判断したHP候補インデックス(なければnull)`;
+
+  try {
+    const response = await fetch(ANTHROPIC_API_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": import.meta.env.VITE_ANTHROPIC_API_KEY || "",
+        "anthropic-version": "2023-06-01",
+        "anthropic-dangerous-direct-browser-access": "true",
+      },
+      body: JSON.stringify({
+        model: "claude-haiku-4-5-20251001",
+        max_tokens: 256,
+        messages: [{ role: "user", content: prompt }],
+      }),
+    });
+
+    if (!response.ok) throw new Error(`AI match API error: ${response.status}`);
+
+    const data = await response.json();
+    const text = data.content?.map((i: any) => i.text || "").join("") || "";
+    const clean = text.replace(/```json|```/g, "").trim();
+    const parsed = JSON.parse(clean) as Record<string, number | null>;
+
+    for (const [idxStr, candIdx] of Object.entries(parsed)) {
+      if (candIdx === null || candIdx === undefined) continue;
+      const pair = pairs[parseInt(idxStr)];
+      if (!pair) continue;
+      const hp = pair.candidates[candIdx];
+      if (!hp) continue;
+      result.set(pair.izakaya.place_id, hp);
+    }
+  } catch (err) {
+    console.warn("AI HP matching error:", err);
+  }
+
+  return result;
+}
+
+/**
  * メインの検索関数
  * 1. Nearby Search で居酒屋を取得
  * 2. 除外ワード・評価・距離でフィルタ
@@ -267,6 +335,45 @@ export async function searchIzakayas(
       hp_has_private_room: hpShop.private_room === "あり",
       hp_capacity: hpShop.capacity,
     });
+  }
+
+  // Step 4: AI マッチング（座標・名前でマッチしなかった店舗を Claude で照合）
+  const unmatchedPairs: Array<{ izakaya: Izakaya; candidates: HpShop[] }> = [];
+  for (const iz of enriched) {
+    if (iz.hp_id) continue; // already matched
+
+    const nearbyCandidates = hpShops.filter((hp) => {
+      const hpLat = parseFloat(hp.lat);
+      const hpLng = parseFloat(hp.lng);
+      if (isNaN(hpLat) || isNaN(hpLng)) return false;
+      return haversineDistance(iz.lat, iz.lng, hpLat, hpLng) <= 300;
+    });
+
+    if (nearbyCandidates.length > 0) {
+      unmatchedPairs.push({ izakaya: iz, candidates: nearbyCandidates });
+    }
+  }
+
+  if (unmatchedPairs.length > 0) {
+    const aiMatches = await aiMatchHpShops(unmatchedPairs);
+
+    for (let i = 0; i < enriched.length; i++) {
+      const iz = enriched[i];
+      if (iz.hp_id) continue;
+      const hpShop = aiMatches.get(iz.place_id);
+      if (!hpShop) continue;
+
+      enriched[i] = {
+        ...iz,
+        smoking: parseHpSmoking(hpShop),
+        hp_id: hpShop.id,
+        hp_url: hpShop.urls.pc,
+        hp_vacancy: hpVacancyIds.has(hpShop.id) ? true : undefined,
+        hp_has_free_drink: hpShop.free_drink === "あり",
+        hp_has_private_room: hpShop.private_room === "あり",
+        hp_capacity: hpShop.capacity,
+      };
+    }
   }
 
   // 評価順にソート
