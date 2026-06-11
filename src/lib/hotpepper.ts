@@ -1,6 +1,9 @@
 // ============================================================
 // HotPepper Gourmet API integration
 // JSONP-based browser-side API calls
+//
+// 注意: グルメサーチAPI v1 にリアルタイム空席情報は存在しない。
+// 取得できるのは掲載情報（喫煙・飲み放題・個室・席数・予約ページURL）のみ。
 // ============================================================
 
 export interface HpShop {
@@ -16,18 +19,22 @@ export interface HpShop {
   private_room?: string;
   capacity?: number;
   open?: string;
-  course?: string;
-  // vacancy field: may be string "空席あり"/"満席" or object
-  vacancy?: string | { id?: string; name?: string };
 }
 
 interface HpResponse {
   results: {
     shop?: HpShop[];
-    results_available?: number;
-    results_returned?: number;
+    results_available?: number | string;
+    results_returned?: number | string;
   };
 }
+
+/**
+ * HP連携の状態（UI上の診断表示用）
+ * configured: APIキーが設定されているか
+ * shopCount: 直近の検索で取得できたHP店舗数
+ */
+export const hpStatus = { configured: false, shopCount: 0 };
 
 /**
  * JSONP call helper for HotPepper API (CORS対策)
@@ -63,34 +70,54 @@ function callJsonp(url: string): Promise<HpResponse> {
 }
 
 /**
- * ホットペッパーAPI で位置情報周辺の居酒屋を検索
- * range=3 → 1000m 圏内
+ * ホットペッパーAPI で位置情報周辺の飲食店を検索
+ * range=3 → 1000m 圏内、距離順（lat/lng指定時はAPI側で距離順固定）
+ *
+ * 繁華街では1km圏内に100件を超えるため、最大300件までページング取得する。
+ * ジャンルを絞ると「焼き鳥」等のカテゴリ店が漏れるため keyword は指定しない。
  */
-export async function searchHotpepper(
-  location: { lat: number; lng: number },
-  options: { vacancyOnly?: boolean } = {}
-): Promise<HpShop[]> {
+export async function searchHotpepper(location: {
+  lat: number;
+  lng: number;
+}): Promise<HpShop[]> {
   const apiKey = import.meta.env.VITE_HOTPEPPER_API_KEY;
-  if (!apiKey) return [];
-
-  const params = new URLSearchParams({
-    key: apiKey,
-    lat: String(location.lat),
-    lng: String(location.lng),
-    range: "3", // 1000m
-    count: "100",
-  });
-  if (options.vacancyOnly) params.set("vacancy", "1");
-
-  const url = `https://webservice.recruit.co.jp/hotpepper/gourmet/v1/?${params}`;
-
-  try {
-    const data = await callJsonp(url);
-    return data.results.shop ?? [];
-  } catch (err) {
-    console.warn("HotPepper API error:", err);
+  hpStatus.configured = Boolean(apiKey);
+  hpStatus.shopCount = 0;
+  if (!apiKey) {
+    console.warn(
+      "[HP] VITE_HOTPEPPER_API_KEY が未設定です。GitHub Secrets / .env を確認してください。HP連携なしで続行します。"
+    );
     return [];
   }
+
+  const all: HpShop[] = [];
+
+  for (let start = 1; start <= 201; start += 100) {
+    const params = new URLSearchParams({
+      key: apiKey,
+      lat: String(location.lat),
+      lng: String(location.lng),
+      range: "3", // 1000m
+      count: "100",
+      start: String(start),
+    });
+    const url = `https://webservice.recruit.co.jp/hotpepper/gourmet/v1/?${params}`;
+
+    try {
+      const data = await callJsonp(url);
+      const shops = data.results.shop ?? [];
+      all.push(...shops);
+
+      const returned = Number(data.results.results_returned ?? shops.length);
+      if (returned < 100) break; // 最終ページ
+    } catch (err) {
+      console.warn("HotPepper API error:", err);
+      break;
+    }
+  }
+
+  hpStatus.shopCount = all.length;
+  return all;
 }
 
 /**
@@ -124,12 +151,16 @@ function distanceMeters(lat1: number, lng1: number, lat2: number, lng2: number):
  * CJK文字（漢字・ひらがな・カタカナ）のみ抽出
  */
 function cjkOnly(s: string): string {
-  return s.replace(/[^\u3040-\u9FFF]/g, "");
+  return s.replace(/[^぀-鿿]/g, "");
 }
 
 /**
  * Google Places の店舗に対応する HotPepper shop を探す
- * 優先順: 座標50m以内 → 座標150m以内+CJK名前一致 → 名前のみ
+ *
+ * 全パス「座標で範囲を絞った上で名前で確認」する。
+ * 雑居ビル密集地では同一座標に多数の店が重なるため、
+ * 座標のみのマッチングは誤連携の危険があり行わない。
+ * ここで決まらない曖昧ケースは呼び出し側の AI マッチングに委ねる。
  */
 export function matchHpShop(
   googleName: string,
@@ -140,77 +171,57 @@ export function matchHpShop(
   const normalized = normalizeName(googleName);
   const googleCjk = cjkOnly(normalized);
 
-  // 1. 座標50m以内 → ほぼ確実に同一店舗
-  for (const shop of hpShops) {
-    const hpLat = parseFloat(shop.lat);
-    const hpLng = parseFloat(shop.lng);
-    if (isNaN(hpLat) || isNaN(hpLng)) continue;
-    if (distanceMeters(lat, lng, hpLat, hpLng) <= 50) return shop;
-  }
-
-  // 2. 座標150m以内 + CJK名前の先頭2文字以上一致
-  if (googleCjk.length >= 2) {
-    for (const shop of hpShops) {
+  // 距離を一度だけ計算し、近い順に並べる
+  const withDist = hpShops
+    .flatMap((shop) => {
       const hpLat = parseFloat(shop.lat);
       const hpLng = parseFloat(shop.lng);
-      if (isNaN(hpLat) || isNaN(hpLng)) continue;
-      if (distanceMeters(lat, lng, hpLat, hpLng) > 150) continue;
+      if (isNaN(hpLat) || isNaN(hpLng)) return [];
+      return [{ shop, dist: distanceMeters(lat, lng, hpLat, hpLng) }];
+    })
+    .sort((a, b) => a.dist - b.dist);
+
+  // 1. 400m以内 + 正規化名の完全一致
+  for (const { shop, dist } of withDist) {
+    if (dist > 400) break;
+    if (normalizeName(shop.name) === normalized) return shop;
+  }
+
+  // 2. 400m以内 + 部分一致（短い方の名前が3文字以上）
+  for (const { shop, dist } of withDist) {
+    if (dist > 400) break;
+    const hpNorm = normalizeName(shop.name);
+    if (Math.min(hpNorm.length, normalized.length) < 3) continue;
+    if (normalized.includes(hpNorm) || hpNorm.includes(normalized)) return shop;
+  }
+
+  // 3. 400m以内 + CJK部分一致（ローマ字・カタカナ表記揺れ対応、2文字以上）
+  //    例: Google「炭焼BOOZE」(CJK=炭焼) ⇔ HP「焼き鳥 炭焼きブーズ」
+  if (googleCjk.length >= 2) {
+    for (const { shop, dist } of withDist) {
+      if (dist > 400) break;
       const hpCjk = cjkOnly(normalizeName(shop.name));
-      if (hpCjk.length >= 2 && (googleCjk.includes(hpCjk.slice(0, 2)) || hpCjk.includes(googleCjk.slice(0, 2)))) {
+      if (hpCjk.length >= 2 && (googleCjk.includes(hpCjk) || hpCjk.includes(googleCjk))) {
         return shop;
       }
     }
   }
 
-  // 3. 名前のみ: 完全一致
-  for (const shop of hpShops) {
-    if (normalizeName(shop.name) === normalized) return shop;
-  }
-
-  // 4. 名前のみ: 部分一致
-  for (const shop of hpShops) {
-    const hpNorm = normalizeName(shop.name);
-    if (normalized.includes(hpNorm) || hpNorm.includes(normalized)) return shop;
-  }
-
-  // 5. 名前のみ: 前方一致（最低4文字）
-  if (normalized.length >= 4) {
-    for (const shop of hpShops) {
-      const hpNorm = normalizeName(shop.name);
-      const checkLen = Math.min(normalized.length, hpNorm.length, 6);
-      if (checkLen >= 4 && normalized.slice(0, checkLen) === hpNorm.slice(0, checkLen)) return shop;
-    }
-  }
-
-  // 6. 名前のみ: CJK部分一致（ロマ字・カタカナ混在対応）
+  // 4. 150m以内 + CJK先頭2文字の交差一致（より緩い最終ヒューリスティック）
   if (googleCjk.length >= 2) {
-    for (const shop of hpShops) {
+    for (const { shop, dist } of withDist) {
+      if (dist > 150) break;
       const hpCjk = cjkOnly(normalizeName(shop.name));
-      if (googleCjk.includes(hpCjk) || hpCjk.includes(googleCjk)) return shop;
+      if (
+        hpCjk.length >= 2 &&
+        (googleCjk.includes(hpCjk.slice(0, 2)) || hpCjk.includes(googleCjk.slice(0, 2)))
+      ) {
+        return shop;
+      }
     }
   }
 
   return null;
-}
-
-/**
- * HP の vacancy フィールドから空席有無を判定
- * undefined → HP 未連携（表示はするがバッジなし）
- * true  → 空席あり
- * false → 満席（非表示にする）
- */
-export function parseHpVacancy(shop: HpShop): boolean | undefined {
-  if (!shop.vacancy) return undefined;
-
-  const v =
-    typeof shop.vacancy === "string"
-      ? shop.vacancy
-      : shop.vacancy.name ?? "";
-
-  if (!v) return undefined;
-  if (v.includes("満席") || v.includes("空席なし") || v === "0") return false;
-  // "空席あり", "残りわずか" etc. → true
-  return true;
 }
 
 /**

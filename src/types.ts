@@ -16,9 +16,9 @@ export interface Izakaya {
   lng: number;
   google_maps_url: string;
   // HotPepper fields (undefined = not linked to HP)
+  // 注: HP APIにリアルタイム空席情報はないため、連携店は「ネット予約可」として扱う
   hp_id?: string;
   hp_url?: string;
-  hp_vacancy?: boolean; // true = has vacancy
   hp_has_free_drink?: boolean;
   hp_has_private_room?: boolean;
   hp_capacity?: number;

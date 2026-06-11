@@ -39,7 +39,7 @@ export async function rankWithAI(
       if (p.hp_has_free_drink) extras.push("飲み放題あり");
       if (p.hp_has_private_room) extras.push("個室あり");
       if (p.hp_capacity) extras.push(`席数${p.hp_capacity}席`);
-      if (p.hp_vacancy !== undefined) extras.push("HP空席確認済");
+      if (p.hp_url) extras.push("ホットペッパーでネット予約可");
       const extraStr = extras.length > 0 ? `, ${extras.join(", ")}` : "";
       return `${p.name} - 徒歩${p.walk_minutes}分, 評価${p.rating}(${p.reviews}件), ${p.price_label}, ${smokingLabel}, 閉店まで${remaining || "不明"}${extraStr}`;
     })

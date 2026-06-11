@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { searchIzakayas } from "./lib/google-places";
+import { hpStatus } from "./lib/hotpepper";
 import { rankWithAI } from "./lib/ai-ranking";
 import { timeUntilClose, formatCloseTime, isClosingSoon, matchesBudget, matchesCapacity } from "./lib/utils";
 import type { Izakaya, AiResult, SearchConditions } from "./types";
@@ -69,7 +70,7 @@ function Tag({ children, color, bg }: { children: React.ReactNode; color?: strin
   );
 }
 
-function VacancyBadge() {
+function ReserveBadge() {
   return (
     <div style={{
       display: "inline-flex", alignItems: "center", gap: 5,
@@ -77,7 +78,7 @@ function VacancyBadge() {
       color: "#5A9E6A", background: "#EBF5EC",
       padding: "3px 9px", borderRadius: 6,
     }}>
-      <span style={{ fontSize: 10 }}>◉</span> 空席あり
+      <span style={{ fontSize: 10 }}>◉</span> ネット予約可
     </div>
   );
 }
@@ -209,13 +210,13 @@ export default function App() {
       const conditions: SearchConditions = { smoking, budgets, groupSize, location };
       const result = await rankWithAI(filtered, conditions);
 
-      // 表示順: 1.空席バッジあり → 2.評価高い → 3.距離近い
+      // 表示順: 1.ネット予約可(HP連携) → 2.評価高い → 3.距離近い
       const sortedRankings = [...result.rankings].sort((a, b) => {
         const pa = result.places.find((p) => p.name === a.name);
         const pb = result.places.find((p) => p.name === b.name);
         if (!pa || !pb) return 0;
-        const va = pa.hp_vacancy === true ? 0 : 1;
-        const vb = pb.hp_vacancy === true ? 0 : 1;
+        const va = pa.hp_url ? 0 : 1;
+        const vb = pb.hp_url ? 0 : 1;
         if (va !== vb) return va - vb;
         if (Math.abs(pa.rating - pb.rating) > 0.01) return pb.rating - pa.rating;
         return pa.walk_minutes - pb.walk_minutes;
@@ -306,7 +307,7 @@ export default function App() {
             </div>
             {smoking !== null && (
               <div style={{ fontSize: 11, color: t.textMuted, marginTop: 8, paddingLeft: 2 }}>
-                ※ 喫煙情報はGoogle APIでは取得できないため、AI判定の参考情報として使用します
+                ※ 喫煙情報はホットペッパー連携店のみ取得できます。AI判定の参考情報として使用します
               </div>
             )}
           </div>
@@ -372,7 +373,7 @@ export default function App() {
       "近くの居酒屋を検索しています",
       "評価 3.8 以上に絞り込んでいます",
       "営業時間を確認しています",
-      "ホットペッパーで空席を確認しています",
+      "ホットペッパーの掲載情報を取得しています",
       "AIがおすすめを選んでいます",
     ];
     return (
@@ -412,7 +413,14 @@ export default function App() {
             background: "#fff", border: `1px solid ${t.cardBorder}`, color: t.textSub,
             padding: "7px 14px", borderRadius: 8, cursor: "pointer", fontSize: 12, fontWeight: 600, fontFamily: "inherit",
           }}>← 条件を変える</button>
-          <div style={{ fontSize: 12, color: t.textMuted }}>{aiResult?.places?.length || 0}件</div>
+          <div style={{ fontSize: 12, color: t.textMuted, textAlign: "right" }}>
+            {aiResult?.places?.length || 0}件
+            <div style={{ fontSize: 10, marginTop: 2 }}>
+              {!hpStatus.configured
+                ? <span style={{ color: t.red }}>HPキー未設定</span>
+                : `HP連携 ${aiResult?.places?.filter((p) => p.hp_id).length || 0}件`}
+            </div>
+          </div>
         </div>
 
         {/* Condition chips */}
@@ -471,7 +479,7 @@ export default function App() {
 
                   <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
                     <OpenBadge closeTime={place.close_time} />
-                    {place.hp_vacancy && <VacancyBadge />}
+                    {place.hp_url && <ReserveBadge />}
                   </div>
 
                   <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8, flexWrap: "wrap" }}>
