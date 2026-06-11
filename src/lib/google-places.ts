@@ -223,9 +223,8 @@ JSON形式のみで返答してください。例: {"0": 0, "1": null}
  * 1. Nearby Search で居酒屋を取得
  * 2. 除外ワード・評価・距離でフィルタ
  * 3. Place Details で営業時間を取得
- * 4. HotPepper API で空席・喫煙情報を補完
- * 5. HP連携店で満席なら除外
- * 6. 評価順にソート
+ * 4. HotPepper API で喫煙・予約情報を補完（座標+名前マッチ → AIマッチ）
+ * 5. 評価順にソート
  */
 export async function searchIzakayas(
   location: { lat: number; lng: number },
@@ -307,15 +306,20 @@ export async function searchIzakayas(
     }
   }
 
-  // Step 3: HotPepper で空席・喫煙情報を補完
+  // Step 3: HotPepper で喫煙・予約情報を補完
   onProgress?.(3);
-  const [hpShops, hpVacancyShops] = await Promise.all([
-    searchHotpepper(location),
-    searchHotpepper(location, { vacancyOnly: true }),
-  ]);
-  console.log("[HP] 取得店舗数:", hpShops.length, "空席あり:", hpVacancyShops.length);
-  console.log("[HP] 店舗一覧:", hpShops.map((s) => `${s.name} (${s.lat},${s.lng})`));
-  const hpVacancyIds = new Set(hpVacancyShops.map((s) => s.id));
+  const hpShops = await searchHotpepper(location);
+  console.log("[HP] 取得店舗数:", hpShops.length);
+
+  const applyHp = (iz: Izakaya, hpShop: HpShop): Izakaya => ({
+    ...iz,
+    smoking: parseHpSmoking(hpShop),
+    hp_id: hpShop.id,
+    hp_url: hpShop.urls.pc,
+    hp_has_free_drink: hpShop.free_drink === "あり",
+    hp_has_private_room: hpShop.private_room === "あり",
+    hp_capacity: hpShop.capacity,
+  });
 
   const enriched: Izakaya[] = [];
   for (const izakaya of detailed) {
@@ -328,38 +332,34 @@ export async function searchIzakayas(
     }
 
     console.log(`[HP] マッチ: ${izakaya.name} → ${hpShop.name}`);
-    enriched.push({
-      ...izakaya,
-      smoking: parseHpSmoking(hpShop),
-      hp_id: hpShop.id,
-      hp_url: hpShop.urls.pc,
-      // vacancy=1 検索に含まれた店舗のみ true（バッジ表示）
-      hp_vacancy: hpVacancyIds.has(hpShop.id) ? true : undefined,
-      hp_has_free_drink: hpShop.free_drink === "あり",
-      hp_has_private_room: hpShop.private_room === "あり",
-      hp_capacity: hpShop.capacity,
-    });
+    enriched.push(applyHp(izakaya, hpShop));
   }
 
   // Step 4: AI マッチング（座標・名前でマッチしなかった店舗を Claude で照合）
+  // 密集地ではHP候補が多すぎるため、店舗ごとに最近傍30件に絞る
   const unmatchedPairs: Array<{ izakaya: Izakaya; candidates: HpShop[] }> = [];
   for (const iz of enriched) {
     if (iz.hp_id) continue; // already matched
 
-    const nearbyCandidates = hpShops.filter((hp) => {
-      const hpLat = parseFloat(hp.lat);
-      const hpLng = parseFloat(hp.lng);
-      if (isNaN(hpLat) || isNaN(hpLng)) return false;
-      return haversineDistance(iz.lat, iz.lng, hpLat, hpLng) <= 300;
-    });
+    const nearbyCandidates = hpShops
+      .flatMap((hp) => {
+        const hpLat = parseFloat(hp.lat);
+        const hpLng = parseFloat(hp.lng);
+        if (isNaN(hpLat) || isNaN(hpLng)) return [];
+        const dist = haversineDistance(iz.lat, iz.lng, hpLat, hpLng);
+        return dist <= 300 ? [{ hp, dist }] : [];
+      })
+      .sort((a, b) => a.dist - b.dist)
+      .slice(0, 30)
+      .map((x) => x.hp);
 
     if (nearbyCandidates.length > 0) {
-      console.log(`[AI match] 候補あり: ${iz.name} → HP候補:`, nearbyCandidates.map((h) => h.name));
       unmatchedPairs.push({ izakaya: iz, candidates: nearbyCandidates });
     }
   }
 
   if (unmatchedPairs.length > 0) {
+    console.log("[AI match] 照合対象:", unmatchedPairs.map((p) => p.izakaya.name));
     const aiMatches = await aiMatchHpShops(unmatchedPairs);
 
     for (let i = 0; i < enriched.length; i++) {
@@ -368,16 +368,8 @@ export async function searchIzakayas(
       const hpShop = aiMatches.get(iz.place_id);
       if (!hpShop) continue;
 
-      enriched[i] = {
-        ...iz,
-        smoking: parseHpSmoking(hpShop),
-        hp_id: hpShop.id,
-        hp_url: hpShop.urls.pc,
-        hp_vacancy: hpVacancyIds.has(hpShop.id) ? true : undefined,
-        hp_has_free_drink: hpShop.free_drink === "あり",
-        hp_has_private_room: hpShop.private_room === "あり",
-        hp_capacity: hpShop.capacity,
-      };
+      console.log(`[AI match] マッチ: ${iz.name} → ${hpShop.name}`);
+      enriched[i] = applyHp(iz, hpShop);
     }
   }
 
